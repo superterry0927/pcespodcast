@@ -5,13 +5,13 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="referrer" content="no-referrer">
   <title>SAY 哩賀！北成國小雙語PODCAST</title>
+  
+  <!-- 引入必要套件 -->
   <script src="https://cdn.tailwindcss.com"></script>
-  <script src="https://unpkg.com/react@17/umd/react.production.min.js"></script>
-  <script src="https://unpkg.com/react-dom@17/umd/react-dom.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react@17/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@17/umd/react-dom.production.min.js"></script>
   <script src="https://unpkg.com/babel-standalone@6/babel.min.js"></script>
   <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
-  
-  <!-- Firebase App & Database SDK -->
   <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
   <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
 
@@ -23,16 +23,8 @@
       background-position: 0 0, 10px 10px;
       font-family: 'Helvetica Neue', Arial, 'Microsoft JhengHei', sans-serif;
     }
-    .glass-card {
-      background: rgba(255, 255, 255, 0.95);
-      backdrop-filter: blur(10px);
-      border-radius: 16px;
-      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
-      border: 1px solid rgba(255, 255, 255, 0.4);
-    }
-    .pulsate-text {
-      animation: pulsate 1.5s infinite;
-    }
+    .glass-card { background: rgba(255, 255, 255, 0.95); backdrop-filter: blur(10px); border-radius: 16px; box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1); border: 1px solid rgba(255, 255, 255, 0.4); }
+    .pulsate-text { animation: pulsate 1.5s infinite; }
     @keyframes pulsate {
       0% { transform: scale(1); opacity: 0.8; }
       50% { transform: scale(1.05); opacity: 1; text-shadow: 0 0 8px rgba(239, 68, 68, 0.4); }
@@ -41,14 +33,24 @@
     .custom-scrollbar::-webkit-scrollbar { width: 8px; }
     .custom-scrollbar::-webkit-scrollbar-track { background: #f1f1f1; border-radius: 10px; }
     .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
-    .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
   </style>
 </head>
 <body>
+
+  <!-- 防護網 1：語法錯誤提示（如果程式碼語法壞了，這塊就不會被隱藏） -->
+  <div id="syntax-error-fallback" style="display:flex; justify-content:center; align-items:center; min-height:100vh; background:#fef2f2; padding:20px; font-family:sans-serif;">
+    <div style="background:white; padding:40px; border-radius:12px; box-shadow:0 10px 25px rgba(0,0,0,0.1); max-width:600px; text-align:center; border-top: 5px solid #ef4444;">
+      <h2 style="color:#b91c1c; font-size:24px; margin-bottom:16px; font-weight:bold;">🚨 網頁白畫面原因：語法錯誤</h2>
+      <p style="color:#4b5563; line-height:1.6; font-size:16px;">如果您在 GitHub 上看到這個畫面，代表您在替換 Firebase 金鑰時，<strong>不小心破壞了程式碼格式</strong>。<br><br>常見的錯誤有：<br>1. 刪掉了雙引號 <code>""</code><br>2. 漏掉了結尾的逗號 <code>,</code><br>3. 貼上時不小心把 apiKey 等英文名字刪掉了</p>
+      <p style="margin-top:20px; font-weight:bold; color:#1f2937; font-size:18px;">請回到 GitHub 仔細檢查 <code>firebaseConfig</code> 區塊的語法！</p>
+    </div>
+  </div>
+
   <div id="root"></div>
 
   <script type="text/babel">
-    const { useState, useEffect } = React;
+    // 如果程式碼沒有語法錯誤，順利執行到這裡，就會把上面的錯誤提示隱藏
+    document.getElementById('syntax-error-fallback').style.display = 'none';
 
     // ==========================================
     // 1. Firebase 雲端資料庫設定區
@@ -63,31 +65,66 @@
   measurementId: "G-RQYKV118YZ"
     };
 
-    // 初始化 Firebase (確保只初始化一次)
-    if (!firebase.apps.length) {
-      firebase.initializeApp(firebaseConfig);
+    let db = null;
+    let isFirebaseReady = false;
+
+    // 檢查使用者是否已經替換了金鑰
+    if (firebaseConfig.apiKey !== "YOUR_API_KEY" && firebaseConfig.apiKey !== "") {
+      try {
+        if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
+        db = firebase.database();
+        isFirebaseReady = true;
+      } catch (e) {
+        console.error("Firebase 初始化失敗", e);
+      }
     }
-    const db = firebase.database();
+
+    const { useState, useEffect } = React;
 
     function App() {
+      // 防護網 2：金鑰未填寫提示
+      if (!isFirebaseReady) {
+        return (
+          <div className="min-h-screen flex items-center justify-center bg-blue-50 px-4 font-sans">
+            <div className="bg-white p-8 md:p-12 rounded-2xl shadow-xl max-w-2xl border-t-8 border-blue-500 text-center">
+              <h1 className="text-3xl font-bold text-gray-800 mb-4">🎉 成功放上 GitHub 囉！</h1>
+              <p className="text-gray-600 text-lg mb-6">網頁沒有壞掉，系統偵測到您<span className="font-bold text-red-500">尚未填寫 Firebase 金鑰</span>，所以暫停載入以免當機。</p>
+              
+              <div className="bg-gray-100 p-6 rounded-xl mb-6 text-left">
+                <p className="text-sm font-bold text-gray-700 mb-2">請打開 GitHub 編輯 index.html，找到這段程式碼：</p>
+                <code className="text-sm text-blue-700 block whitespace-pre-wrap font-mono">
+                  const firebaseConfig = &#123;<br/>
+                  &nbsp;&nbsp;apiKey: "改成您真正的金鑰",<br/>
+                  &nbsp;&nbsp;authDomain: "...",<br/>
+                  &nbsp;&nbsp;...<br/>
+                  &#125;;
+                </code>
+              </div>
+              <p className="text-gray-600 font-bold text-lg">把假資料覆蓋掉，儲存後等待 1 分鐘重整網頁，就會顯示正常的 Podcast 畫面了！</p>
+            </div>
+          </div>
+        );
+      }
+
       // 狀態管理
       const [isAdmin, setIsAdmin] = useState(false);
       const [showLogin, setShowLogin] = useState(false);
       const [passwordInput, setPasswordInput] = useState('');
       
-      const [adminPassword, setAdminPassword] = useState('88888'); // 預設密碼，會從雲端覆蓋
+      const [adminPassword, setAdminPassword] = useState('88888');
       const [rssUrl, setRssUrl] = useState('');
       const [customLogo, setCustomLogo] = useState('');
-      const [formBindings, setFormBindings] = useState([]); // { episodeTitle, formUrl }
+      const [formBindings, setFormBindings] = useState([]);
       
       const [podcastData, setPodcastData] = useState(null);
       const [loading, setLoading] = useState(true);
       const [errorMsg, setErrorMsg] = useState('');
 
       // ==========================================
-      // 2. 從 Firebase 載入設定資料
+      // 2. 載入 Firebase 設定
       // ==========================================
       useEffect(() => {
+        if (!db) return;
         const settingsRef = db.ref('settings');
         settingsRef.on('value', (snapshot) => {
           const data = snapshot.val();
@@ -99,18 +136,17 @@
           }
           setLoading(false);
         }, (error) => {
-          console.error("Firebase Read Error:", error);
+          setErrorMsg('無法讀取資料庫！請確認 Firebase 規則已設為 true。');
           setLoading(false);
         });
       }, []);
 
-      // 監聽 rssUrl 改變時去抓取 Podcast 資料
       useEffect(() => {
         if (rssUrl) fetchRssData(rssUrl);
       }, [rssUrl]);
 
       // ==========================================
-      // 3. 解析 RSS 資料 (包含音檔清洗防護)
+      // 3. 解析 RSS
       // ==========================================
       const fetchRssData = async (url) => {
         try {
@@ -119,15 +155,11 @@
           
           if (data.status === 'ok') {
             const episodes = data.items.map(item => {
-              // 【重要修復】清洗 Firstory 追蹤碼，確保播放器能載入
               let cleanAudio = item.enclosure ? item.enclosure.link : "";
               if (cleanAudio && cleanAudio.includes("file.firstory.me")) {
                 cleanAudio = "https://file.firstory.me" + cleanAudio.split("file.firstory.me")[1];
               }
-
-              // 清洗 HTML 標籤
               const cleanDescription = item.description.replace(/<[^>]+>/g, '');
-
               return {
                 title: item.title,
                 pubDate: item.pubDate.split(' ')[0],
@@ -143,34 +175,27 @@
               episodes: episodes
             });
             setErrorMsg('');
-          } else {
-            setErrorMsg('無法解析 RSS，請確認網址是否正確。');
           }
         } catch (err) {
-          setErrorMsg('網路連線失敗，請稍後再試。');
+          console.error(err);
         }
       };
 
-      // ==========================================
-      // 4. Firebase 儲存功能
-      // ==========================================
       const handleSaveSettings = (updates, successMsg) => {
+        if (!db) return;
         db.ref('settings').update(updates)
           .then(() => alert(successMsg))
-          .catch(() => alert('儲存至雲端失敗，請檢查 Firebase 權限設定。'));
+          .catch(() => alert('儲存失敗！請檢查 Firebase 的寫入權限是否為 true。'));
       };
 
       const handleLogin = () => {
         if (passwordInput === adminPassword) {
-          setIsAdmin(true);
-          setShowLogin(false);
-          setPasswordInput('');
+          setIsAdmin(true); setShowLogin(false); setPasswordInput('');
         } else {
           alert("密碼錯誤！");
         }
       };
 
-      // 圖片轉 Base64
       const handleLogoUpload = (e) => {
         const file = e.target.files[0];
         if (file) {
@@ -178,13 +203,12 @@
           reader.onloadend = () => {
             const newLogo = reader.result;
             setCustomLogo(newLogo);
-            handleSaveSettings({ customLogo: newLogo }, 'Logo 已上傳並儲存至雲端！');
+            handleSaveSettings({ customLogo: newLogo }, 'Logo 已上傳並儲存！');
           };
           reader.readAsDataURL(file);
         }
       };
 
-      // 綁定表單
       const handleAddFormBinding = (e) => {
         e.preventDefault();
         const epTitle = e.target.epTitle.value;
@@ -203,103 +227,66 @@
         handleSaveSettings({ formBindings: newBindings }, '已刪除該綁定！');
       };
 
-      // ==========================================
-      // 介面渲染
-      // ==========================================
-      if (loading) {
-        return <div className="min-h-screen flex items-center justify-center font-bold text-xl text-gray-600">載入雲端資料中...</div>;
-      }
+      if (loading) return <div className="min-h-screen flex items-center justify-center font-bold text-xl text-gray-600">載入雲端資料中...</div>;
 
       return (
         <div className="min-h-screen pb-20 relative">
           
-          {/* 右上角登入按鈕 */}
           {!isAdmin && (
-            <button 
-              onClick={() => setShowLogin(true)}
-              className="absolute top-4 right-4 z-50 bg-white/80 hover:bg-white p-3 rounded-full shadow-md transition-all text-gray-500 hover:text-gray-800"
-            >
+            <button onClick={() => setShowLogin(true)} className="absolute top-4 right-4 z-50 bg-white/80 hover:bg-white p-3 rounded-full shadow-md transition-all text-gray-500 hover:text-gray-800">
               <i className="fas fa-cog text-xl"></i>
             </button>
           )}
 
-          {/* 登入視窗 */}
           {showLogin && (
             <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
               <div className="bg-white p-8 rounded-2xl shadow-2xl w-96 max-w-[90%] transform transition-all scale-100">
                 <div className="flex justify-between items-center mb-6">
                   <h2 className="text-2xl font-bold text-gray-800">管理員登入</h2>
-                  <button onClick={() => setShowLogin(false)} className="text-gray-400 hover:text-gray-600">
-                    <i className="fas fa-times text-xl"></i>
-                  </button>
+                  <button onClick={() => setShowLogin(false)} className="text-gray-400 hover:text-gray-600"><i className="fas fa-times text-xl"></i></button>
                 </div>
                 <div className="space-y-4">
                   <input 
                     type="password" 
-                    placeholder="請輸入密碼" 
                     className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-400 focus:outline-none transition-all text-lg"
                     value={passwordInput}
                     onChange={(e) => setPasswordInput(e.target.value)}
                     onKeyPress={(e) => e.key === 'Enter' && handleLogin()}
                   />
-                  <button 
-                    onClick={handleLogin}
-                    className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-xl transition-all shadow-md hover:shadow-lg"
-                  >
-                    進入後台
-                  </button>
+                  <button onClick={handleLogin} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-xl transition-all shadow-md hover:shadow-lg">進入後台</button>
                 </div>
               </div>
             </div>
           )}
 
-          {/* 管理後台 */}
           {isAdmin ? (
             <div className="max-w-4xl mx-auto pt-10 px-4 space-y-6">
               <div className="flex justify-between items-center mb-8">
                 <h1 className="text-3xl font-bold text-gray-800"><i className="fas fa-cloud text-blue-500 mr-3"></i>雲端管理後台</h1>
-                <button onClick={() => setIsAdmin(false)} className="bg-gray-200 hover:bg-gray-300 px-5 py-2 rounded-lg font-bold text-gray-700 transition-all">
-                  <i className="fas fa-sign-out-alt mr-2"></i>返回前台
-                </button>
+                <button onClick={() => setIsAdmin(false)} className="bg-gray-200 hover:bg-gray-300 px-5 py-2 rounded-lg font-bold text-gray-700 transition-all"><i className="fas fa-sign-out-alt mr-2"></i>返回前台</button>
               </div>
 
-              {/* RSS 設定 */}
               <div className="glass-card p-6">
                 <h2 className="text-xl font-bold text-gray-800 mb-4"><i className="fas fa-satellite-dish mr-2 text-purple-500"></i>Podcast RSS 來源</h2>
-                <div className="flex gap-4">
-                  <input 
-                    type="text" 
-                    value={rssUrl}
-                    onChange={(e) => setRssUrl(e.target.value)}
-                    placeholder="貼上 Firstory RSS 網址..." 
-                    className="flex-1 px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-400"
-                  />
-                  <button onClick={() => handleSaveSettings({ rssUrl }, 'RSS 已儲存至雲端！')} className="bg-blue-600 text-white px-6 py-2 rounded-lg font-bold hover:bg-blue-700">儲存</button>
+                <div className="flex flex-col md:flex-row gap-4">
+                  <input type="text" value={rssUrl} onChange={(e) => setRssUrl(e.target.value)} placeholder="貼上 Firstory RSS 網址..." className="flex-1 px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-400" />
+                  <button onClick={() => handleSaveSettings({ rssUrl }, 'RSS 已儲存！')} className="bg-blue-600 text-white px-6 py-2 rounded-lg font-bold hover:bg-blue-700">儲存</button>
                 </div>
               </div>
 
-              {/* 修改密碼設定 */}
               <div className="glass-card p-6">
-                <h2 className="text-xl font-bold text-gray-800 mb-4"><i className="fas fa-lock mr-2 text-orange-500"></i>修改後台密碼</h2>
-                <div className="flex gap-4">
-                  <input 
-                    type="text" 
-                    value={adminPassword}
-                    onChange={(e) => setAdminPassword(e.target.value)}
-                    placeholder="輸入新密碼" 
-                    className="flex-1 px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-400"
-                  />
-                  <button onClick={() => handleSaveSettings({ adminPassword }, '新密碼已儲存至雲端！')} className="bg-orange-500 text-white px-6 py-2 rounded-lg font-bold hover:bg-orange-600">更新密碼</button>
+                <h2 className="text-xl font-bold text-gray-800 mb-4"><i className="fas fa-lock mr-2 text-orange-500"></i>管理後台密碼設定</h2>
+                <div className="flex flex-col md:flex-row gap-4">
+                  <input type="text" value={adminPassword} onChange={(e) => setAdminPassword(e.target.value)} placeholder="輸入新密碼" className="flex-1 px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-400" />
+                  <button onClick={() => handleSaveSettings({ adminPassword }, '新密碼已儲存！')} className="bg-orange-500 text-white px-6 py-2 rounded-lg font-bold hover:bg-orange-600">更新密碼</button>
                 </div>
               </div>
 
-              {/* Logo 設定 */}
               <div className="glass-card p-6">
                 <h2 className="text-xl font-bold text-gray-800 mb-4"><i className="fas fa-image mr-2 text-green-500"></i>自訂節目 LOGO</h2>
                 <input type="file" accept="image/*" onChange={handleLogoUpload} className="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:font-bold file:bg-green-50 file:text-green-700 hover:file:bg-green-100"/>
               </div>
 
-              {/* 綁定表單設定 */}
               <div className="glass-card p-6">
                 <h2 className="text-xl font-bold text-gray-800 mb-4"><i className="fas fa-tasks mr-2 text-red-500"></i>為單集綁定 Google 表單</h2>
                 <form onSubmit={handleAddFormBinding} className="bg-gray-50 p-4 rounded-xl border border-gray-200 mb-4">
@@ -324,90 +311,63 @@
                 <div className="space-y-2">
                   {formBindings.map((binding, index) => (
                     <div key={index} className="flex justify-between items-center bg-white border p-3 rounded-lg shadow-sm">
-                      <div className="overflow-hidden">
+                      <div className="overflow-hidden pr-4">
                         <div className="font-bold text-gray-800 truncate">{binding.episodeTitle}</div>
                         <div className="text-xs text-blue-500 truncate">{binding.formUrl}</div>
                       </div>
-                      <button onClick={() => removeBinding(index)} className="text-red-500 hover:text-red-700 ml-4"><i className="fas fa-trash"></i></button>
+                      <button onClick={() => removeBinding(index)} className="text-red-500 hover:text-red-700 p-2"><i className="fas fa-trash"></i></button>
                     </div>
                   ))}
                 </div>
               </div>
             </div>
           ) : (
-            /* ==========================================
-               前台展示區
-               ========================================== */
-            <div className="max-w-3xl mx-auto pt-16 px-4">
+            <div className="max-w-3xl mx-auto pt-10 px-4 md:pt-16">
               
-              {/* 頻道標頭區 */}
               {podcastData ? (
                 <div className="text-center mb-12 animate-fade-in-up">
-                  <img src={podcastData.image} alt="Podcast Logo" className="w-40 h-40 md:w-56 md:h-56 mx-auto rounded-3xl shadow-xl border-4 border-white mb-6 object-cover bg-white"/>
-                  <h1 className="text-3xl md:text-5xl font-extrabold text-gray-800 mb-4">{podcastData.title}</h1>
+                  <img src={podcastData.image} alt="Logo" className="w-32 h-32 md:w-56 md:h-56 mx-auto rounded-3xl shadow-xl border-4 border-white mb-6 object-cover bg-white"/>
+                  <h1 className="text-2xl md:text-5xl font-extrabold text-gray-800 mb-4">{podcastData.title}</h1>
                   <p className="text-gray-700 text-sm md:text-base px-4 leading-relaxed max-w-2xl mx-auto">{podcastData.description}</p>
                 </div>
               ) : (
                 <div className="text-center mt-20">
-                  <h1 className="text-3xl font-extrabold text-gray-800 mb-4">SAY 哩賀！北成國小雙語PODCAST</h1>
-                  <p className="text-gray-500">目前沒有節目資料，請由右上角進入後台設定 RSS 網址。</p>
+                  <h1 className="text-2xl md:text-3xl font-extrabold text-gray-800 mb-4">SAY 哩賀！北成國小雙語PODCAST</h1>
+                  <p className="text-gray-500">目前沒有節目資料，請由右上角登入後台設定。</p>
                   <p className="text-red-500 mt-4 font-bold">{errorMsg}</p>
                 </div>
               )}
 
-              {/* 單集列表 */}
               <div className="space-y-8">
                 {podcastData?.episodes.map((ep, index) => {
                   const epNumber = podcastData.episodes.length - index;
                   const boundForm = formBindings.find(b => b.episodeTitle === ep.title);
 
                   return (
-                    <div key={index} className="relative pt-6 animate-fade-in-up" style={{ animationDelay: `${index * 0.1}s` }}>
-                      {/* 集數標籤 */}
-                      <div className="absolute top-0 left-4 bg-yellow-400 text-gray-900 font-black px-4 py-1.5 rounded-t-xl text-sm shadow-sm z-10">
-                        EP. {epNumber}
-                      </div>
+                    <div key={index} className="relative pt-6 animate-fade-in-up">
+                      <div className="absolute top-0 left-4 bg-yellow-400 text-gray-900 font-black px-4 py-1.5 rounded-t-xl text-sm shadow-sm z-10">EP. {epNumber}</div>
                       
                       <div className="glass-card p-5 md:p-8 relative z-20">
-                        <h2 className="text-xl md:text-2xl font-bold text-gray-800 mb-2 leading-tight">{ep.title}</h2>
-                        <div className="text-blue-500 text-sm font-semibold mb-4"><i className="far fa-calendar-alt mr-2"></i>{ep.pubDate}</div>
+                        <h2 className="text-lg md:text-2xl font-bold text-gray-800 mb-2 leading-tight">{ep.title}</h2>
+                        <div className="text-blue-500 text-xs md:text-sm font-semibold mb-4"><i className="far fa-calendar-alt mr-2"></i>{ep.pubDate}</div>
                         <p className="text-gray-600 text-sm md:text-base leading-relaxed mb-6 custom-scrollbar max-h-32 overflow-y-auto pr-2">{ep.description}</p>
                         
-                        {/* 播放器區塊 */}
-                        <div className="bg-gray-100 p-3 md:p-4 rounded-2xl shadow-inner mb-6">
-                          <audio 
-                            key={ep.audioUrl} 
-                            controls 
-                            src={ep.audioUrl} 
-                            preload="metadata"
-                            className="w-full h-12 outline-none rounded-full"
-                          >
-                            您的瀏覽器不支援音訊播放。
-                          </audio>
-                          <div className="text-right mt-2 mr-2">
-                            <a href={ep.audioUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-gray-500 hover:text-blue-600 underline font-semibold transition-colors">
-                              <i className="fas fa-external-link-alt mr-1"></i> 播放器沒反應？點此另開視窗收聽
-                            </a>
-                          </div>
+                        <div className="bg-gray-100 p-3 md:p-4 rounded-2xl shadow-inner mb-2">
+                          <audio controls src={ep.audioUrl} preload="metadata" className="w-full h-12 outline-none rounded-full">不支援音訊播放。</audio>
+                        </div>
+                        <div className="text-right mb-6">
+                            <a href={ep.audioUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-500 hover:text-blue-700 underline font-semibold"><i className="fas fa-external-link-alt mr-1"></i> 播放器沒反應？點此另開視窗收聽</a>
                         </div>
 
-                        {/* 綁定的表單任務區塊 */}
                         {boundForm && (
-                          <div className="mt-6 border-t border-dashed border-gray-300 pt-6">
-                            <div className="bg-green-50 rounded-2xl p-5 md:p-6 border border-green-100 flex flex-col items-center">
-                              <div className="bg-red-100 text-red-600 text-sm font-bold px-4 py-1.5 rounded-full mb-4 pulsate-text shadow-sm">
-                                🎤 上傳錄音，參加活動
-                              </div>
-                              <div className="bg-green-500 text-white text-sm font-bold px-6 py-2 rounded-full mb-6 shadow-md shadow-green-500/30">
-                                📝 EP{epNumber.toString().padStart(2, '0')} 填報表單
-                              </div>
-                              
-                              {/* QR Code */}
+                          <div className="mt-4 border-t border-dashed border-gray-300 pt-6">
+                            <div className="bg-green-50 rounded-2xl p-5 border border-green-100 flex flex-col items-center">
+                              <div className="bg-red-100 text-red-600 text-sm font-bold px-4 py-1.5 rounded-full mb-4 pulsate-text shadow-sm">🎤 上傳錄音，參加活動</div>
+                              <div className="bg-green-500 text-white text-sm font-bold px-6 py-2 rounded-full mb-6 shadow-md">📝 EP{epNumber.toString().padStart(2, '0')} 填報表單</div>
                               <div className="bg-white p-3 rounded-xl shadow-sm border border-gray-100 mb-6">
-                                <img src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(boundForm.formUrl)}`} alt="QR Code" className="w-40 h-40 object-contain"/>
+                                <img src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(boundForm.formUrl)}`} alt="QR" className="w-32 h-32 md:w-40 md:h-40 object-contain"/>
                               </div>
-
-                              <a href={boundForm.formUrl} target="_blank" rel="noopener noreferrer" className="w-full max-w-xs bg-green-500 hover:bg-green-600 text-white font-bold py-3.5 px-6 rounded-xl text-center transition-all shadow-md hover:shadow-xl hover:-translate-y-0.5 active:translate-y-0 flex items-center justify-center">
+                              <a href={boundForm.formUrl} target="_blank" rel="noopener noreferrer" className="w-full max-w-xs bg-green-500 hover:bg-green-600 text-white font-bold py-3.5 px-6 rounded-xl text-center shadow-md flex items-center justify-center">
                                 前往表單填寫 <i className="fas fa-arrow-right ml-2"></i>
                               </a>
                             </div>
