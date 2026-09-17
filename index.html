@@ -62,15 +62,14 @@
             } else {
                 // TODO: 放到 GitHub 時，請把這裡面的引號內容換成您的 Firebase 金鑰
                 firebaseConfig = {
-                 
-  apiKey: "AIzaSyBa0ZMSPJUmgMnO5x0R6UfjFSrxyCYfF0I",
+                   apiKey: "AIzaSyBa0ZMSPJUmgMnO5x0R6UfjFSrxyCYfF0I",
   authDomain: "say-hi-podcast.firebaseapp.com",
   projectId: "say-hi-podcast",
   storageBucket: "say-hi-podcast.firebasestorage.app",
   messagingSenderId: "977518603086",
   appId: "1:977518603086:web:8f0017e22cf76bcaf1cc1f",
   measurementId: "G-RQYKV118YZ"
-};
+                };
             }
 
             try {
@@ -122,6 +121,8 @@
             // Podcast Meta & RSS 狀態
             const [rssUrl, setRssUrl] = useState('');
             const [customLogo, setCustomLogo] = useState('');
+            const [adminPassword, setAdminPassword] = useState('88888'); // 預設密碼
+            const [newAdminPassword, setNewAdminPassword] = useState(''); // 用於後台變更密碼
             const [podcastInfo, setPodcastInfo] = useState({ 
                 title: 'SAY 哩賀！', 
                 description: '北成國小雙語PODCAST', 
@@ -148,6 +149,7 @@
                                     if (data.rssUrl) setRssUrl(data.rssUrl);
                                     if (data.customLogo) setCustomLogo(data.customLogo);
                                     if (data.formBindings) setFormBindings(data.formBindings);
+                                    if (data.adminPassword) setAdminPassword(data.adminPassword); // 載入自訂密碼
                                     
                                     // 若雲端有 RSS 網址，就去抓取最新單集
                                     if (data.rssUrl) {
@@ -186,7 +188,9 @@
                 if (!html) return '';
                 const txt = document.createElement("textarea");
                 txt.innerHTML = html;
-                return txt.value.replace(/<[^>]+>/g, '').trim(); // 脫去所有 HTML 標籤
+                // 除了脫去 HTML 標籤外，也把一些預設的 Firstory 連結文字清掉
+                let cleanText = txt.value.replace(/<[^>]+>/g, '').trim();
+                return cleanText;
             };
 
             // 儲存資料到 Firebase
@@ -218,7 +222,6 @@
                             ...prev,
                             title: feed.title || prev.title,
                             description: decodeHTML(feed.description) || prev.description,
-                            // 優先使用雲端的自訂 Logo，若無則使用 RSS 原本的圖案
                             image: logoOverride || feed.image || prev.image
                         }));
 
@@ -229,7 +232,13 @@
                             if (item.enclosure && item.enclosure.link) audioLink = item.enclosure.link;
                             else if (item.link && item.link.endsWith('.mp3')) audioLink = item.link;
                             
-                            // 強制轉換為 HTTPS 避免混合內容阻擋
+                            // 去除 Firstory 的追蹤碼，直取真實音檔 (繞過防火牆與擋廣告套件)
+                            if(audioLink.includes('chrt.fm/track/')) {
+                                const parts = audioLink.split('chrt.fm/track/');
+                                if(parts.length > 1) {
+                                    audioLink = 'https://' + parts[1].split('https://').pop();
+                                }
+                            }
                             audioLink = audioLink.replace(/^http:\/\//i, 'https://');
 
                             let desc = item.description || item.content || "本集沒有提供說明文字。";
@@ -261,11 +270,20 @@
                 fetchRssData(rssUrl.trim());
             };
 
+            const handleSavePassword = (e) => {
+                e.preventDefault();
+                if (newAdminPassword.trim().length === 0) {
+                    showMessage('密碼不能為空白！', 'error');
+                    return;
+                }
+                saveToCloud({ adminPassword: newAdminPassword.trim() });
+                setNewAdminPassword('');
+                showMessage('🔐 後台密碼已成功變更！');
+            };
+
             const handleLogoUpload = (e) => {
                 const file = e.target.files[0];
                 if (file) {
-                    // 為了避免超出 Firestore 的 1MB 限制，若圖檔太大在實際生產環境應存入 Storage。
-                    // 這裡先轉 Base64 供輕量使用
                     const reader = new FileReader();
                     reader.onloadend = () => {
                         const base64String = reader.result;
@@ -278,7 +296,6 @@
 
             const handleClearLogo = () => {
                 setCustomLogo('');
-                // 傳入空字串清空雲端欄位
                 saveToCloud({ customLogo: '' });
                 fetchRssData(rssUrl, '');
             };
@@ -301,7 +318,6 @@
             };
 
             const removeBinding = (title) => {
-                // 不使用 alert/confirm，直接刪除並給予提示
                 const updatedBindings = { ...formBindings };
                 delete updatedBindings[title];
                 setFormBindings(updatedBindings);
@@ -311,7 +327,8 @@
 
             const handleLogin = (e) => {
                 e.preventDefault();
-                if (password === '88888') {
+                // 比對資料庫儲存的密碼 (預設為 88888)
+                if (password === adminPassword) {
                     setView('admin');
                     setPassword('');
                 } else {
@@ -332,7 +349,6 @@
                             <form onSubmit={handleLogin} className="flex flex-col gap-4">
                                 <input 
                                     type="password" 
-                                    placeholder="請輸入密碼 (預設 88888)" 
                                     value={password}
                                     onChange={(e) => setPassword(e.target.value)}
                                     className="p-4 rounded-xl border-2 border-gray-200 focus:border-yellow-400 outline-none text-center text-lg shadow-inner"
@@ -384,6 +400,25 @@
                                 </form>
                             </div>
 
+                            {/* 修改密碼設定 */}
+                            <div className="bg-white/80 p-5 md:p-6 rounded-2xl mb-8 border border-gray-100 shadow-sm">
+                                <h3 className="text-lg md:text-xl font-bold text-gray-800 mb-2">🔐 管理後台密碼設定</h3>
+                                <p className="text-xs md:text-sm text-gray-500 mb-4">設定您專屬的管理員登入密碼（預設為 88888）。</p>
+                                <form onSubmit={handleSavePassword} className="flex flex-col md:flex-row gap-3">
+                                    <input 
+                                        type="text" 
+                                        placeholder="請輸入新密碼" 
+                                        value={newAdminPassword} 
+                                        onChange={e => setNewAdminPassword(e.target.value)} 
+                                        required
+                                        className="flex-1 p-3 rounded-xl border border-gray-300 outline-none focus:border-yellow-500 focus:ring-2 focus:ring-yellow-200 transition text-sm md:text-base" 
+                                    />
+                                    <button type="submit" className="font-black px-6 py-3 rounded-xl text-white shadow-md transition whitespace-nowrap text-sm md:text-base bg-yellow-500 hover:bg-yellow-600">
+                                        更新密碼
+                                    </button>
+                                </form>
+                            </div>
+
                             {/* 自訂 LOGO */}
                             <div className="bg-white/80 p-5 md:p-6 rounded-2xl mb-8 border border-gray-100 shadow-sm">
                                 <h3 className="text-lg md:text-xl font-bold text-gray-800 mb-2">🖼️ 自訂節目 LOGO</h3>
@@ -405,8 +440,8 @@
 
                             {/* 表單綁定 */}
                             <div className="bg-white/80 p-5 md:p-6 rounded-2xl border border-gray-100 shadow-sm">
-                                <h3 className="text-lg md:text-xl font-bold text-gray-800 mb-2">📝 綁定 Google 表單任務</h3>
-                                <p className="text-xs md:text-sm text-gray-500 mb-4">為特定集數設定專屬 Google 表單。前台會自動產生專屬按鈕與 QR-Code。</p>
+                                <h3 className="text-lg md:text-xl font-bold text-gray-800 mb-2">📝 單集專屬 Google 表單綁定</h3>
+                                <p className="text-xs md:text-sm text-gray-500 mb-4">為特定集數設定專屬表單，前台會自動在該集下方產生按鈕與 QR-Code。</p>
                                 
                                 <form onSubmit={handleAddBinding} className="bg-emerald-50 p-4 md:p-5 rounded-xl border border-emerald-200 mb-6 flex flex-col gap-4">
                                      <div>
@@ -487,10 +522,10 @@
                                 ON
                             </div>
                         </div>
-                        <h1 className="text-3xl md:text-4xl lg:text-5xl font-black text-gray-800 mt-4 tracking-tight" style={{textShadow: '0 2px 4px rgba(255,255,255,0.5)'}}>
+                        <h1 className="text-2xl md:text-3xl lg:text-4xl font-black text-gray-800 mt-4 tracking-tight" style={{textShadow: '0 2px 4px rgba(255,255,255,0.5)'}}>
                             {podcastInfo.title}
                         </h1>
-                        <h2 className="text-sm md:text-lg lg:text-xl font-black text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-teal-500 mt-2 px-4 leading-relaxed max-w-2xl mx-auto">
+                        <h2 className="text-sm md:text-base lg:text-lg font-black text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-teal-500 mt-2 px-4 leading-relaxed max-w-2xl mx-auto">
                             {podcastInfo.description}
                         </h2>
                     </div>
@@ -520,25 +555,26 @@
                                         </div>
 
                                         {/* 上半部：資訊與播放器 */}
-                                        <div className="p-5 md:p-8 pt-8 md:pt-10">
-                                            <h3 className="text-xl md:text-2xl font-black text-gray-800 mb-2 leading-snug">
+                                        <div className="p-5 md:p-8 pt-8 md:pt-10 flex flex-col h-full">
+                                            <h3 className="text-lg md:text-xl lg:text-2xl font-black text-gray-800 mb-2 leading-snug">
                                                 {ep.title}
                                             </h3>
                                             <p className="text-xs md:text-sm text-blue-600 font-black mb-3 md:mb-4">
                                                 <i className="fa-regular fa-calendar"></i> {ep.pubDate}
                                             </p>
                                             
-                                            <div className="text-gray-700 mb-5 md:mb-6 bg-white/60 p-4 md:p-5 rounded-xl md:rounded-2xl leading-relaxed whitespace-pre-wrap font-medium border border-white shadow-sm text-sm md:text-base max-h-40 md:max-h-48 overflow-y-auto">
+                                            {/* 說明文字 */}
+                                            <div className="text-gray-700 mb-5 md:mb-6 bg-white/60 p-4 md:p-5 rounded-xl md:rounded-2xl leading-relaxed whitespace-pre-wrap font-medium border border-white shadow-sm text-xs md:text-sm lg:text-base max-h-40 md:max-h-48 overflow-y-auto">
                                                 {ep.description}
                                             </div>
                                             
+                                            {/* 播放器 (置於說明文字下方) */}
                                             {ep.audioUrl && (
-                                                <div className="bg-gray-800 p-3 md:p-4 rounded-xl md:rounded-2xl shadow-xl relative z-10 pointer-events-auto border-4 border-gray-700 w-full">
+                                                <div className="bg-gray-800 p-3 md:p-4 rounded-xl md:rounded-2xl shadow-xl relative z-10 pointer-events-auto border-4 border-gray-700 w-full mt-auto">
                                                     <div className="flex justify-between items-center mb-2 pl-1">
                                                         <span className="text-yellow-400 text-xs md:text-sm font-bold"><i className="fa-solid fa-headphones"></i> 線上收聽</span>
                                                         <a href={ep.audioUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-gray-400 hover:text-white transition">另開視窗</a>
                                                     </div>
-                                                    {/* 加入 key 強制 React 更新播放器實體 */}
                                                     <audio key={ep.audioUrl} controls preload="metadata" className="w-full outline-none">
                                                         <source src={ep.audioUrl} type="audio/mpeg" />
                                                         您的瀏覽器不支援音訊播放。
@@ -547,7 +583,7 @@
                                             )}
                                         </div>
 
-                                        {/* 下半部：專屬表單任務 */}
+                                        {/* 下半部：專屬表單任務 (如果有的話) */}
                                         {formUrl && (
                                             <div className="bg-emerald-50 border-t border-emerald-100 p-5 md:p-8 flex flex-col md:flex-row items-center justify-between gap-6 relative z-10">
                                                 
@@ -556,18 +592,18 @@
                                                         <i className="fa-solid fa-microphone-lines"></i> 上傳錄音，參加活動
                                                     </div>
                                                     
-                                                    <h4 className="text-xl md:text-2xl font-black text-emerald-800 mb-2">
+                                                    <h4 className="text-lg md:text-xl font-black text-emerald-800 mb-2">
                                                         EP{formattedEpNum} 填報表單
                                                     </h4>
-                                                    <p className="text-sm text-emerald-600 mb-4 font-bold">請點擊按鈕或掃描右側 QR Code 完成本集任務。</p>
+                                                    <p className="text-xs md:text-sm text-emerald-600 mb-4 font-bold">請點擊按鈕或掃描右側 QR Code 完成本集任務。</p>
                                                     
-                                                    <a href={formUrl} target="_blank" rel="noopener noreferrer" className="w-full md:w-auto text-center bg-emerald-600 text-white font-black py-3 px-8 rounded-xl hover:bg-emerald-700 transition shadow-lg transform hover:scale-105 active:scale-95 text-base md:text-lg">
+                                                    <a href={formUrl} target="_blank" rel="noopener noreferrer" className="w-full md:w-auto text-center bg-emerald-600 text-white font-black py-3 px-8 rounded-xl hover:bg-emerald-700 transition shadow-lg transform hover:scale-105 active:scale-95 text-sm md:text-base">
                                                         <i className="fa-solid fa-pen-to-square mr-2"></i> 前往填寫表單
                                                     </a>
 
                                                     <div className="mt-4 w-full md:w-auto bg-white px-3 py-2 rounded-lg border border-emerald-100 text-left overflow-hidden shadow-inner">
                                                         <p className="text-[10px] text-gray-400 font-bold mb-0.5 uppercase">表單短網址</p>
-                                                        <p className="text-xs md:text-sm text-emerald-700 font-bold truncate max-w-[250px] md:max-w-[300px] select-all cursor-pointer" title="點擊可選取複製">
+                                                        <p className="text-xs text-emerald-700 font-bold truncate max-w-[250px] md:max-w-[300px] select-all cursor-pointer" title="點擊可選取複製">
                                                             {formUrl}
                                                         </p>
                                                     </div>
@@ -577,7 +613,7 @@
                                                     <img 
                                                         src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(formUrl)}&margin=2`} 
                                                         alt="Form QR Code" 
-                                                        className="w-28 h-28 md:w-36 md:h-36 rounded-lg"
+                                                        className="w-24 h-24 md:w-32 md:h-32 rounded-lg"
                                                     />
                                                 </div>
                                             </div>
