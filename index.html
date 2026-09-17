@@ -37,75 +37,48 @@
 </head>
 <body>
 
-  <!-- 防護網 1：語法錯誤提示（如果程式碼語法壞了，這塊就不會被隱藏） -->
+  <!-- 防護網 1：語法錯誤提示 -->
   <div id="syntax-error-fallback" style="display:flex; justify-content:center; align-items:center; min-height:100vh; background:#fef2f2; padding:20px; font-family:sans-serif;">
     <div style="background:white; padding:40px; border-radius:12px; box-shadow:0 10px 25px rgba(0,0,0,0.1); max-width:600px; text-align:center; border-top: 5px solid #ef4444;">
-      <h2 style="color:#b91c1c; font-size:24px; margin-bottom:16px; font-weight:bold;">🚨 網頁白畫面原因：語法錯誤</h2>
-      <p style="color:#4b5563; line-height:1.6; font-size:16px;">如果您在 GitHub 上看到這個畫面，代表您在替換 Firebase 金鑰時，<strong>不小心破壞了程式碼格式</strong>。<br><br>常見的錯誤有：<br>1. 刪掉了雙引號 <code>""</code><br>2. 漏掉了結尾的逗號 <code>,</code><br>3. 貼上時不小心把 apiKey 等英文名字刪掉了</p>
-      <p style="margin-top:20px; font-weight:bold; color:#1f2937; font-size:18px;">請回到 GitHub 仔細檢查 <code>firebaseConfig</code> 區塊的語法！</p>
+      <h2 style="color:#b91c1c; font-size:24px; margin-bottom:16px; font-weight:bold;">🚨 網頁載入錯誤</h2>
+      <p style="color:#4b5563; line-height:1.6; font-size:16px;">如果您看到這個畫面，代表程式碼中有語法錯誤。</p>
     </div>
   </div>
 
   <div id="root"></div>
 
   <script type="text/babel">
-    // 如果程式碼沒有語法錯誤，順利執行到這裡，就會把上面的錯誤提示隱藏
+    // 隱藏錯誤提示
     document.getElementById('syntax-error-fallback').style.display = 'none';
 
     // ==========================================
-    // 1. Firebase 雲端資料庫設定區
+    // 1. Firebase 雲端資料庫設定區 (已修正)
     // ==========================================
     const firebaseConfig = {
       apiKey: "AIzaSyBa0ZMSPJUmgMnO5x0R6UfjFSrxyCYfF0I",
-  authDomain: "say-hi-podcast.firebaseapp.com",
-  projectId: "say-hi-podcast",
-  storageBucket: "say-hi-podcast.firebasestorage.app",
-  messagingSenderId: "977518603086",
-  appId: "1:977518603086:web:8f0017e22cf76bcaf1cc1f",
-  measurementId: "G-RQYKV118YZ"
+      authDomain: "say-hi-podcast.firebaseapp.com",
+      databaseURL: "https://say-hi-podcast-default-rtdb.firebaseio.com", // 補上這行最關鍵的資料庫網址！
+      projectId: "say-hi-podcast",
+      storageBucket: "say-hi-podcast.firebasestorage.app",
+      messagingSenderId: "977518603086",
+      appId: "1:977518603086:web:8f0017e22cf76bcaf1cc1f",
+      measurementId: "G-RQYKV118YZ"
     };
 
     let db = null;
     let isFirebaseReady = false;
 
-    // 檢查使用者是否已經替換了金鑰
-    if (firebaseConfig.apiKey !== "YOUR_API_KEY" && firebaseConfig.apiKey !== "") {
-      try {
-        if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
-        db = firebase.database();
-        isFirebaseReady = true;
-      } catch (e) {
-        console.error("Firebase 初始化失敗", e);
-      }
+    try {
+      if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
+      db = firebase.database();
+      isFirebaseReady = true;
+    } catch (e) {
+      console.error("Firebase 初始化失敗", e);
     }
 
     const { useState, useEffect } = React;
 
     function App() {
-      // 防護網 2：金鑰未填寫提示
-      if (!isFirebaseReady) {
-        return (
-          <div className="min-h-screen flex items-center justify-center bg-blue-50 px-4 font-sans">
-            <div className="bg-white p-8 md:p-12 rounded-2xl shadow-xl max-w-2xl border-t-8 border-blue-500 text-center">
-              <h1 className="text-3xl font-bold text-gray-800 mb-4">🎉 成功放上 GitHub 囉！</h1>
-              <p className="text-gray-600 text-lg mb-6">網頁沒有壞掉，系統偵測到您<span className="font-bold text-red-500">尚未填寫 Firebase 金鑰</span>，所以暫停載入以免當機。</p>
-              
-              <div className="bg-gray-100 p-6 rounded-xl mb-6 text-left">
-                <p className="text-sm font-bold text-gray-700 mb-2">請打開 GitHub 編輯 index.html，找到這段程式碼：</p>
-                <code className="text-sm text-blue-700 block whitespace-pre-wrap font-mono">
-                  const firebaseConfig = &#123;<br/>
-                  &nbsp;&nbsp;apiKey: "改成您真正的金鑰",<br/>
-                  &nbsp;&nbsp;authDomain: "...",<br/>
-                  &nbsp;&nbsp;...<br/>
-                  &#125;;
-                </code>
-              </div>
-              <p className="text-gray-600 font-bold text-lg">把假資料覆蓋掉，儲存後等待 1 分鐘重整網頁，就會顯示正常的 Podcast 畫面了！</p>
-            </div>
-          </div>
-        );
-      }
-
       // 狀態管理
       const [isAdmin, setIsAdmin] = useState(false);
       const [showLogin, setShowLogin] = useState(false);
@@ -136,7 +109,7 @@
           }
           setLoading(false);
         }, (error) => {
-          setErrorMsg('無法讀取資料庫！請確認 Firebase 規則已設為 true。');
+          setErrorMsg('無法讀取資料庫！請確認 Firebase 控制台已建立 Realtime Database 且權限已開。');
           setLoading(false);
         });
       }, []);
@@ -185,7 +158,7 @@
         if (!db) return;
         db.ref('settings').update(updates)
           .then(() => alert(successMsg))
-          .catch(() => alert('儲存失敗！請檢查 Firebase 的寫入權限是否為 true。'));
+          .catch(() => alert('儲存失敗！請檢查 Firebase 權限。'));
       };
 
       const handleLogin = () => {
