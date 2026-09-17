@@ -118,9 +118,13 @@
             
             const episodes = data.items.map(item => {
               let cleanAudio = item.enclosure ? item.enclosure.link : "";
-              if (cleanAudio && cleanAudio.includes("file.firstory.me")) {
-                cleanAudio = "https://file.firstory.me" + cleanAudio.split("file.firstory.me")[1];
+              
+              // 【終極網址清洗】尋找網址中最後一個 http 開頭的地方，徹底切斷前方所有追蹤碼
+              const realHttpIndex = cleanAudio.lastIndexOf("http");
+              if (realHttpIndex > 0) {
+                cleanAudio = cleanAudio.substring(realHttpIndex);
               }
+
               const cleanDescription = item.description.replace(htmlRegex, '');
               return {
                 title: item.title,
