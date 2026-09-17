@@ -48,11 +48,10 @@
   <script type="text/babel">
     document.getElementById('syntax-error-fallback').style.display = 'none';
 
-    // 完美整合的 Firebase 金鑰
     const firebaseConfig = {
       apiKey: "AIzaSyBa0ZMSPJUmgMnO5x0R6UfjFSrxyCYfF0I",
       authDomain: "say-hi-podcast.firebaseapp.com",
-      //databaseURL: "https://say-hi-podcast-default-rtdb.firebaseio.com",
+      databaseURL: "https://say-hi-podcast-default-rtdb.firebaseio.com",
       projectId: "say-hi-podcast",
       storageBucket: "say-hi-podcast.firebasestorage.app",
       messagingSenderId: "977518603086",
@@ -115,12 +114,14 @@
           const data = await response.json();
           
           if (data.status === 'ok') {
+            const htmlRegex = new RegExp('<[^>]+>', 'g'); // 改用安全寫法
+            
             const episodes = data.items.map(item => {
               let cleanAudio = item.enclosure ? item.enclosure.link : "";
               if (cleanAudio && cleanAudio.includes("file.firstory.me")) {
                 cleanAudio = "https://file.firstory.me" + cleanAudio.split("file.firstory.me")[1];
               }
-              const cleanDescription = item.description.replace(/<[^>]+>/g, '');
+              const cleanDescription = item.description.replace(htmlRegex, '');
               return {
                 title: item.title,
                 pubDate: item.pubDate.split(' ')[0],
@@ -131,7 +132,7 @@
             
             setPodcastData({
               title: data.feed.title,
-              description: data.feed.description.replace(/<[^>]+>/g, ''),
+              description: data.feed.description.replace(htmlRegex, ''),
               image: customLogo || data.feed.image,
               episodes: episodes
             });
