@@ -232,11 +232,13 @@
                             if (item.enclosure && item.enclosure.link) audioLink = item.enclosure.link;
                             else if (item.link && item.link.endsWith('.mp3')) audioLink = item.link;
                             
-                            // 去除 Firstory 的追蹤碼，直取真實音檔 (繞過防火牆與擋廣告套件)
-                            if(audioLink.includes('chrt.fm/track/')) {
-                                const parts = audioLink.split('chrt.fm/track/');
-                                if(parts.length > 1) {
-                                    audioLink = 'https://' + parts[1].split('https://').pop();
+                            // 【修正】安全且精確地去除 Firstory (Chartable) 的追蹤碼，避免產生無效網址
+                            if (audioLink.includes('chrt.fm/track/')) {
+                                const urlParts = audioLink.split('/');
+                                // 尋找真正包含音檔的網域 (例如 file.firstory.me)
+                                const trueDomainIndex = urlParts.findIndex(part => part.includes('firstory.me') || part.includes('soundon.fm') || part.includes('mp3'));
+                                if (trueDomainIndex !== -1) {
+                                    audioLink = 'https://' + urlParts.slice(trueDomainIndex).join('/');
                                 }
                             }
                             audioLink = audioLink.replace(/^http:\/\//i, 'https://');
@@ -575,8 +577,14 @@
                                                         <span className="text-yellow-400 text-xs md:text-sm font-bold"><i className="fa-solid fa-headphones"></i> 線上收聽</span>
                                                         <a href={ep.audioUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-gray-400 hover:text-white transition">另開視窗</a>
                                                     </div>
-                                                    <audio key={ep.audioUrl} controls preload="metadata" className="w-full outline-none">
-                                                        <source src={ep.audioUrl} type="audio/mpeg" />
+                                                    {/* 【修正】將 src 屬性直接綁定在 audio 標籤上，確保 React 即時更新音檔網址 */}
+                                                    <audio 
+                                                        key={ep.audioUrl} 
+                                                        src={ep.audioUrl}
+                                                        controls 
+                                                        preload="metadata" 
+                                                        className="w-full outline-none bg-gray-100 rounded-lg"
+                                                    >
                                                         您的瀏覽器不支援音訊播放。
                                                     </audio>
                                                 </div>
