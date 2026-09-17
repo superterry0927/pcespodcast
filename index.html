@@ -1,0 +1,600 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="referrer" content="no-referrer">
+    <title>SAY 哩賀！北成國小雙語PODCAST</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;700;900&family=Nunito:wght@700;900&display=swap" rel="stylesheet">
+
+    <style>
+        body {
+            font-family: 'Nunito', 'Noto Sans TC', sans-serif;
+            background-color: #FCD34D;
+            background-image: radial-gradient(#F59E0B 1.5px, transparent 1.5px);
+            background-size: 24px 24px;
+            min-height: 100vh;
+            color: #333;
+        }
+        .glass-card {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(12px);
+            border: 2px solid rgba(255, 255, 255, 1);
+            box-shadow: 0 12px 30px rgba(0,0,0,0.08);
+        }
+        ::-webkit-scrollbar { width: 10px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #FBBF24; border-radius: 10px; border: 2px solid #FCD34D;}
+        ::-webkit-scrollbar-thumb:hover { background: #F59E0B; }
+        
+        .pulse-text {
+            animation: pulse-red 2s infinite;
+        }
+        @keyframes pulse-red {
+            0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4); }
+            50% { transform: scale(1.05); box-shadow: 0 0 0 6px rgba(239, 68, 68, 0); }
+            100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, setDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // 【GITHUB 部署請看這裡】
+        // 當您將網頁放到 Github 時，請將以下 config 替換成您在 Google Firebase 申請的專案設定！
+        const initFirebase = async () => {
+            let firebaseConfig;
+            
+            // 判斷是否在目前的預覽環境，或是外部的 GitHub 環境
+            if (typeof __firebase_config !== 'undefined') {
+                firebaseConfig = JSON.parse(__firebase_config);
+            } else {
+                // TODO: 放到 GitHub 時，請把這裡面的引號內容換成您的 Firebase 金鑰
+                firebaseConfig = {
+                    apiKey: "YOUR_API_KEY",
+                    authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
+                    projectId: "YOUR_PROJECT_ID",
+                    storageBucket: "YOUR_PROJECT_ID.appspot.com",
+                    messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
+                    appId: "YOUR_APP_ID"
+                };
+            }
+
+            try {
+                const app = initializeApp(firebaseConfig);
+                const auth = getAuth(app);
+                const db = getFirestore(app);
+
+                // 強制驗證與登入 (為存取 Firebase 資料庫的必要條件)
+                let user;
+                if (typeof __initial_auth_token !== 'undefined') {
+                    const credential = await signInWithCustomToken(auth, __initial_auth_token);
+                    user = credential.user;
+                } else {
+                    const credential = await signInAnonymously(auth);
+                    user = credential.user;
+                }
+
+                // 定義資料庫存取路徑
+                const appId = typeof __app_id !== 'undefined' ? __app_id : 'say-hi-podcast';
+                // 依據嚴格規定，使用 /artifacts/{appId}/public/data 結構
+                const settingsRef = doc(db, 'artifacts', appId, 'public', 'data', 'PodcastSettings', 'main');
+
+                // 將 Firebase 工具暴露給全域環境，讓 React 可以使用
+                window.fbAPI = { db, settingsRef, setDoc, onSnapshot, isReady: true };
+                window.dispatchEvent(new Event('firebase-ready'));
+                console.log("🔥 Firebase 連線成功！");
+            } catch (error) {
+                console.error("Firebase 初始化失敗:", error);
+                window.fbAPI = { isReady: false, error: error.message };
+                window.dispatchEvent(new Event('firebase-ready'));
+            }
+        };
+
+        initFirebase();
+    </script>
+
+    <script type="text/babel">
+        const { useState, useEffect, useMemo } = React;
+
+        const App = () => {
+            const [view, setView] = useState('frontend'); 
+            const [password, setPassword] = useState('');
+            const [sysMsg, setSysMsg] = useState({ text: '', type: '' });
+            
+            // Firebase 狀態與載入
+            const [fbReady, setFbReady] = useState(false);
+            const [fbError, setFbError] = useState('');
+
+            // Podcast Meta & RSS 狀態
+            const [rssUrl, setRssUrl] = useState('');
+            const [customLogo, setCustomLogo] = useState('');
+            const [podcastInfo, setPodcastInfo] = useState({ 
+                title: 'SAY 哩賀！', 
+                description: '北成國小雙語PODCAST', 
+                image: 'https://placehold.co/400x400/FCD34D/ffffff?text=Podcast' 
+            });
+            const [episodes, setEpisodes] = useState([]);
+            const [isLoadingRss, setIsLoadingRss] = useState(false);
+
+            // 綁定表單狀態 (Key: Episode Title, Value: Form URL)
+            const [formBindings, setFormBindings] = useState({});
+            const [newBindingTitle, setNewBindingTitle] = useState('');
+            const [newBindingUrl, setNewBindingUrl] = useState('');
+
+            useEffect(() => {
+                const setupFirebase = () => {
+                    if (window.fbAPI && window.fbAPI.isReady) {
+                        setFbReady(true);
+                        // 開始即時監聽雲端資料庫
+                        const unsubscribe = window.fbAPI.onSnapshot(
+                            window.fbAPI.settingsRef,
+                            (docSnapshot) => {
+                                if (docSnapshot.exists()) {
+                                    const data = docSnapshot.data();
+                                    if (data.rssUrl) setRssUrl(data.rssUrl);
+                                    if (data.customLogo) setCustomLogo(data.customLogo);
+                                    if (data.formBindings) setFormBindings(data.formBindings);
+                                    
+                                    // 若雲端有 RSS 網址，就去抓取最新單集
+                                    if (data.rssUrl) {
+                                        fetchRssData(data.rssUrl, data.customLogo);
+                                    }
+                                } else {
+                                    // 第一次建立，初始化空設定檔
+                                    console.log("建立初始雲端設定檔...");
+                                }
+                            },
+                            (error) => {
+                                console.error("Firebase 讀取錯誤:", error);
+                                setFbError('資料庫讀取失敗');
+                            }
+                        );
+                        return unsubscribe;
+                    } else if (window.fbAPI && !window.fbAPI.isReady) {
+                        setFbError('Firebase 環境尚未設定。若在 Github 部署請確認設定檔。');
+                    }
+                };
+
+                if (window.fbAPI) {
+                    setupFirebase();
+                } else {
+                    window.addEventListener('firebase-ready', setupFirebase);
+                    return () => window.removeEventListener('firebase-ready', setupFirebase);
+                }
+            }, []);
+
+            const showMessage = (text, type = 'success') => {
+                setSysMsg({ text, type });
+                setTimeout(() => setSysMsg({ text: '', type: '' }), 4000);
+            };
+
+            const decodeHTML = (html) => {
+                if (!html) return '';
+                const txt = document.createElement("textarea");
+                txt.innerHTML = html;
+                return txt.value.replace(/<[^>]+>/g, '').trim(); // 脫去所有 HTML 標籤
+            };
+
+            // 儲存資料到 Firebase
+            const saveToCloud = async (newData) => {
+                if (!fbReady) return;
+                try {
+                    // 使用 merge: true 保留未修改的欄位
+                    await window.fbAPI.setDoc(window.fbAPI.settingsRef, newData, { merge: true });
+                    showMessage('☁️ 設定已成功同步至雲端！');
+                } catch (error) {
+                    console.error("儲存失敗:", error);
+                    showMessage('儲存至雲端失敗，請稍後再試。', 'error');
+                }
+            };
+
+            const fetchRssData = async (url, logoOverride = customLogo) => {
+                if (!url) return;
+                setIsLoadingRss(true);
+                try {
+                    // 使用 rss2json API 進行安全跨網域抓取
+                    const apiUrl = `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(url)}&api_key=`; 
+                    const response = await fetch(apiUrl);
+                    const data = await response.json();
+
+                    if (data.status === 'ok') {
+                        const feed = data.feed;
+                        
+                        setPodcastInfo(prev => ({
+                            ...prev,
+                            title: feed.title || prev.title,
+                            description: decodeHTML(feed.description) || prev.description,
+                            // 優先使用雲端的自訂 Logo，若無則使用 RSS 原本的圖案
+                            image: logoOverride || feed.image || prev.image
+                        }));
+
+                        const fetchedEpisodes = data.items.map((item, index) => {
+                            const epNum = data.items.length - index;
+                            
+                            let audioLink = '';
+                            if (item.enclosure && item.enclosure.link) audioLink = item.enclosure.link;
+                            else if (item.link && item.link.endsWith('.mp3')) audioLink = item.link;
+                            
+                            // 強制轉換為 HTTPS 避免混合內容阻擋
+                            audioLink = audioLink.replace(/^http:\/\//i, 'https://');
+
+                            let desc = item.description || item.content || "本集沒有提供說明文字。";
+
+                            return {
+                                id: item.guid || `ep-${Date.now()}-${index}`,
+                                title: decodeHTML(item.title),
+                                description: decodeHTML(desc),
+                                audioUrl: audioLink,
+                                pubDate: new Date(item.pubDate.replace(/-/g, '/')).toLocaleDateString('zh-TW'),
+                                epNum: epNum
+                            };
+                        });
+                        setEpisodes(fetchedEpisodes);
+                    } else {
+                        throw new Error(data.message || 'RSS 讀取失敗');
+                    }
+                } catch (error) {
+                    console.error("RSS Fetch Error:", error);
+                    showMessage('無法讀取 RSS 網址，請確認網址是否公開且正確。', 'error');
+                } finally {
+                    setIsLoadingRss(false);
+                }
+            };
+
+            const handleSaveRss = (e) => {
+                e.preventDefault();
+                saveToCloud({ rssUrl: rssUrl.trim() });
+                fetchRssData(rssUrl.trim());
+            };
+
+            const handleLogoUpload = (e) => {
+                const file = e.target.files[0];
+                if (file) {
+                    // 為了避免超出 Firestore 的 1MB 限制，若圖檔太大在實際生產環境應存入 Storage。
+                    // 這裡先轉 Base64 供輕量使用
+                    const reader = new FileReader();
+                    reader.onloadend = () => {
+                        const base64String = reader.result;
+                        setCustomLogo(base64String);
+                        saveToCloud({ customLogo: base64String });
+                    };
+                    reader.readAsDataURL(file);
+                }
+            };
+
+            const handleClearLogo = () => {
+                setCustomLogo('');
+                // 傳入空字串清空雲端欄位
+                saveToCloud({ customLogo: '' });
+                fetchRssData(rssUrl, '');
+            };
+
+            const handleAddBinding = (e) => {
+                e.preventDefault();
+                if (!newBindingTitle || !newBindingUrl) {
+                    showMessage('標題與網址皆為必填！', 'error');
+                    return;
+                }
+                const updatedBindings = {
+                    ...formBindings,
+                    [newBindingTitle.trim()]: newBindingUrl.trim()
+                };
+                setFormBindings(updatedBindings);
+                saveToCloud({ formBindings: updatedBindings });
+                
+                setNewBindingTitle('');
+                setNewBindingUrl('');
+            };
+
+            const removeBinding = (title) => {
+                // 不使用 alert/confirm，直接刪除並給予提示
+                const updatedBindings = { ...formBindings };
+                delete updatedBindings[title];
+                setFormBindings(updatedBindings);
+                saveToCloud({ formBindings: updatedBindings });
+                showMessage(`已解除 [${title}] 的表單綁定`);
+            };
+
+            const handleLogin = (e) => {
+                e.preventDefault();
+                if (password === '88888') {
+                    setView('admin');
+                    setPassword('');
+                } else {
+                    showMessage('密碼錯誤！', 'error');
+                }
+            };
+
+            if (view === 'login') {
+                return (
+                    <div className="min-h-screen flex items-center justify-center p-4 relative">
+                        <button onClick={() => setView('frontend')} className="absolute top-6 right-6 text-gray-500 hover:text-gray-800 text-xl bg-white p-3 rounded-full shadow-md z-10 transition transform hover:scale-110">
+                            <i className="fa-solid fa-times"></i>
+                        </button>
+                        <div className="glass-card p-8 rounded-3xl w-full max-w-md text-center relative z-10">
+                            <h2 className="text-3xl font-black text-gray-800 mb-6">🎙️ 管理後台登入</h2>
+                            {fbError && <div className="text-red-500 text-sm mb-4 font-bold">{fbError}</div>}
+                            {sysMsg.text && <div className={`p-3 rounded-xl mb-4 font-bold ${sysMsg.type === 'error' ? 'bg-red-100 text-red-600' : 'bg-green-100 text-green-600'}`}>{sysMsg.text}</div>}
+                            <form onSubmit={handleLogin} className="flex flex-col gap-4">
+                                <input 
+                                    type="password" 
+                                    placeholder="請輸入密碼 (預設 88888)" 
+                                    value={password}
+                                    onChange={(e) => setPassword(e.target.value)}
+                                    className="p-4 rounded-xl border-2 border-gray-200 focus:border-yellow-400 outline-none text-center text-lg shadow-inner"
+                                />
+                                <button type="submit" disabled={!fbReady && !fbError} className="bg-yellow-400 text-yellow-900 font-bold py-4 rounded-xl hover:bg-yellow-500 transition shadow-lg text-lg disabled:opacity-50">
+                                    {!fbReady && !fbError ? '資料庫連線中...' : '進入管理'}
+                                </button>
+                            </form>
+                        </div>
+                    </div>
+                );
+            }
+
+            if (view === 'admin') {
+                return (
+                    <div className="min-h-screen p-4 md:p-8 max-w-4xl mx-auto pb-20">
+                        <div className="glass-card p-6 md:p-10 rounded-3xl relative border-t-8 border-yellow-400 shadow-2xl">
+                            <button onClick={() => setView('frontend')} className="absolute top-6 right-6 text-gray-500 hover:text-gray-800 text-sm md:text-base bg-gray-100 px-4 py-2 rounded-full transition transform hover:scale-105 shadow-sm font-bold">
+                                <i className="fa-solid fa-arrow-right-from-bracket"></i> 儲存並返回前台
+                            </button>
+                            
+                            <h2 className="text-2xl md:text-3xl font-black text-gray-800 mb-2 flex items-center gap-3">
+                                <i className="fa-solid fa-cloud-arrow-up text-blue-500"></i> 雲端管理後台
+                            </h2>
+                            <p className="text-gray-500 text-sm mb-8 font-bold">您的設定將自動備份至 Firebase 雲端資料庫</p>
+
+                            {sysMsg.text && (
+                                <div className={`p-4 rounded-xl mb-6 font-bold shadow-sm ${sysMsg.type === 'error' ? 'bg-red-100 text-red-700' : 'bg-emerald-100 text-emerald-700'}`}>
+                                    {sysMsg.text}
+                                </div>
+                            )}
+
+                            {/* RSS 設定 */}
+                            <div className="bg-white/80 p-5 md:p-6 rounded-2xl mb-8 border border-gray-100 shadow-sm">
+                                <h3 className="text-lg md:text-xl font-bold text-gray-800 mb-2">📡 Podcast RSS 來源設定</h3>
+                                <p className="text-xs md:text-sm text-gray-500 mb-4">貼上 Firstory 的 RSS 網址，系統會自動匯入所有集數並建立播放器。</p>
+                                <form onSubmit={handleSaveRss} className="flex flex-col md:flex-row gap-3">
+                                    <input 
+                                        type="url" 
+                                        placeholder="例: https://feed.firstory.me/rss/user/..." 
+                                        value={rssUrl} 
+                                        onChange={e => setRssUrl(e.target.value)} 
+                                        required
+                                        className="flex-1 p-3 rounded-xl border border-gray-300 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition text-sm md:text-base" 
+                                    />
+                                    <button disabled={isLoadingRss} type="submit" className={`font-black px-6 py-3 rounded-xl text-white shadow-md transition whitespace-nowrap text-sm md:text-base ${isLoadingRss ? 'bg-gray-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'}`}>
+                                        {isLoadingRss ? '⏳ 抓取中...' : '儲存 RSS'}
+                                    </button>
+                                </form>
+                            </div>
+
+                            {/* 自訂 LOGO */}
+                            <div className="bg-white/80 p-5 md:p-6 rounded-2xl mb-8 border border-gray-100 shadow-sm">
+                                <h3 className="text-lg md:text-xl font-bold text-gray-800 mb-2">🖼️ 自訂節目 LOGO</h3>
+                                <p className="text-xs md:text-sm text-gray-500 mb-4">覆蓋預設的 Podcast 圖片（建議為正方形，小於 1MB）。</p>
+                                <div className="flex flex-col md:flex-row items-start md:items-center gap-4">
+                                     <input 
+                                        type="file" 
+                                        accept="image/*" 
+                                        onChange={handleLogoUpload}
+                                        className="block w-full text-sm text-gray-500 file:mr-4 file:py-2.5 file:px-5 file:rounded-xl file:border-0 file:text-sm file:font-bold file:bg-yellow-100 file:text-yellow-800 hover:file:bg-yellow-200 cursor-pointer transition"
+                                    />
+                                    {customLogo && (
+                                        <button onClick={handleClearLogo} className="text-sm bg-red-100 text-red-600 hover:bg-red-200 px-4 py-2 rounded-xl font-bold whitespace-nowrap">
+                                            <i className="fa-solid fa-trash-can"></i> 清除自訂圖片
+                                        </button>
+                                    )}
+                                </div>
+                            </div>
+
+                            {/* 表單綁定 */}
+                            <div className="bg-white/80 p-5 md:p-6 rounded-2xl border border-gray-100 shadow-sm">
+                                <h3 className="text-lg md:text-xl font-bold text-gray-800 mb-2">📝 綁定 Google 表單任務</h3>
+                                <p className="text-xs md:text-sm text-gray-500 mb-4">為特定集數設定專屬 Google 表單。前台會自動產生專屬按鈕與 QR-Code。</p>
+                                
+                                <form onSubmit={handleAddBinding} className="bg-emerald-50 p-4 md:p-5 rounded-xl border border-emerald-200 mb-6 flex flex-col gap-4">
+                                     <div>
+                                        <label className="block text-sm font-bold text-emerald-800 mb-1">選擇目標單集 *</label>
+                                        <select 
+                                            value={newBindingTitle} 
+                                            onChange={e => setNewBindingTitle(e.target.value)}
+                                            required
+                                            className="w-full p-3 rounded-xl border border-emerald-300 outline-none bg-white text-sm md:text-base font-bold text-gray-700"
+                                        >
+                                            <option value="" disabled>-- 請從已讀取的 RSS 集數中選擇 --</option>
+                                            {episodes.map(ep => (
+                                                <option key={ep.id} value={ep.title}>{ep.title}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-bold text-emerald-800 mb-1">Google 表單完整網址 *</label>
+                                        <input 
+                                            type="url" 
+                                            placeholder="例: https://docs.google.com/forms/..." 
+                                            value={newBindingUrl} 
+                                            onChange={e => setNewBindingUrl(e.target.value)} 
+                                            required
+                                            className="w-full p-3 rounded-xl border border-emerald-300 outline-none bg-white text-sm md:text-base" 
+                                        />
+                                    </div>
+                                    <button type="submit" className="bg-emerald-600 hover:bg-emerald-700 text-white font-black py-3 rounded-xl shadow-md transition text-sm md:text-base">
+                                        ➕ 新增綁定並儲存至雲端
+                                    </button>
+                                </form>
+
+                                {/* 已綁定清單 */}
+                                {Object.keys(formBindings).length > 0 && (
+                                    <div className="mt-6 border-t border-gray-200 pt-4">
+                                        <h4 className="font-bold text-gray-700 mb-3 text-sm">目前已綁定的單集表單：</h4>
+                                        <div className="flex flex-col gap-2">
+                                            {Object.entries(formBindings).map(([title, url]) => (
+                                                <div key={title} className="bg-white p-3 md:p-4 rounded-xl border border-gray-200 flex flex-col md:flex-row justify-between items-start md:items-center shadow-sm gap-3 md:gap-0">
+                                                    <div className="flex-1 pr-2 w-full overflow-hidden">
+                                                        <div className="font-black text-sm text-gray-800 truncate" title={title}>{title}</div>
+                                                        <div className="text-xs text-emerald-600 truncate mt-1" title={url}>{url}</div>
+                                                    </div>
+                                                    <button onClick={() => removeBinding(title)} className="w-full md:w-auto text-red-500 hover:text-white hover:bg-red-500 border border-red-500 font-bold px-3 py-2 rounded-lg transition shrink-0 text-sm">
+                                                        <i className="fa-solid fa-unlink"></i> 解除綁定
+                                                    </button>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                );
+            }
+
+            return (
+                <div className="min-h-screen pb-20 relative font-sans">
+                    {/* 右上角齒輪 */}
+                    <button 
+                        onClick={() => setView('login')} 
+                        className="fixed top-4 right-4 md:top-6 md:right-6 w-10 h-10 md:w-12 md:h-12 bg-white/70 backdrop-blur-md rounded-full shadow-lg flex items-center justify-center text-gray-600 hover:text-yellow-600 hover:bg-white transition z-50 transform hover:rotate-90 border border-gray-100"
+                        title="進入管理後台"
+                    >
+                        <i className="fa-solid fa-gear text-lg md:text-xl"></i>
+                    </button>
+
+                    {/* Header 區塊 */}
+                    <div className="pt-12 md:pt-16 pb-8 md:pb-12 px-4 text-center">
+                        <div className="inline-block relative group">
+                            <img 
+                                src={podcastInfo.image} 
+                                alt="Podcast Cover" 
+                                className="w-32 h-32 md:w-48 md:h-48 rounded-3xl object-cover shadow-2xl border-4 border-white mb-4 mx-auto bg-white transition transform group-hover:scale-105"
+                            />
+                            <div className="absolute -bottom-3 -right-3 md:-bottom-4 md:-right-4 bg-red-500 text-white w-12 h-12 md:w-14 md:h-14 rounded-full flex items-center justify-center font-black text-lg md:text-xl shadow-lg transform rotate-12 border-2 border-white">
+                                ON
+                            </div>
+                        </div>
+                        <h1 className="text-3xl md:text-4xl lg:text-5xl font-black text-gray-800 mt-4 tracking-tight" style={{textShadow: '0 2px 4px rgba(255,255,255,0.5)'}}>
+                            {podcastInfo.title}
+                        </h1>
+                        <h2 className="text-sm md:text-lg lg:text-xl font-black text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-teal-500 mt-2 px-4 leading-relaxed max-w-2xl mx-auto">
+                            {podcastInfo.description}
+                        </h2>
+                    </div>
+
+                    {/* 單集清單 */}
+                    <div className="max-w-4xl mx-auto px-4 flex flex-col gap-6 md:gap-8">
+                        {isLoadingRss ? (
+                            <div className="text-center py-16">
+                                <i className="fa-solid fa-spinner fa-spin text-3xl md:text-4xl text-yellow-600 mb-4"></i>
+                                <p className="text-yellow-800 font-bold">正在從 RSS 同步最新節目...</p>
+                            </div>
+                        ) : episodes.length === 0 ? (
+                            <div className="text-center py-16 text-gray-600 font-bold bg-white/60 rounded-3xl shadow-sm border border-white">
+                                {fbReady ? '尚未設定 RSS，請點擊右上角齒輪進入後台。' : '正在連線雲端伺服器...'}
+                            </div>
+                        ) : (
+                            episodes.map((ep) => {
+                                const formUrl = formBindings[ep.title];
+                                const formattedEpNum = ep.epNum < 10 ? `0${ep.epNum}` : ep.epNum;
+
+                                return (
+                                    <div key={ep.id} className="glass-card rounded-2xl md:rounded-3xl flex flex-col relative overflow-hidden group hover:shadow-xl transition duration-300 border-b-4 border-yellow-400">
+                                        
+                                        {/* 標籤 */}
+                                        <div className="absolute top-0 left-0 bg-yellow-400 text-yellow-900 font-black px-3 py-1 md:px-4 md:py-1.5 rounded-br-xl shadow-sm text-xs md:text-sm z-20">
+                                            EP. {ep.epNum}
+                                        </div>
+
+                                        {/* 上半部：資訊與播放器 */}
+                                        <div className="p-5 md:p-8 pt-8 md:pt-10">
+                                            <h3 className="text-xl md:text-2xl font-black text-gray-800 mb-2 leading-snug">
+                                                {ep.title}
+                                            </h3>
+                                            <p className="text-xs md:text-sm text-blue-600 font-black mb-3 md:mb-4">
+                                                <i className="fa-regular fa-calendar"></i> {ep.pubDate}
+                                            </p>
+                                            
+                                            <div className="text-gray-700 mb-5 md:mb-6 bg-white/60 p-4 md:p-5 rounded-xl md:rounded-2xl leading-relaxed whitespace-pre-wrap font-medium border border-white shadow-sm text-sm md:text-base max-h-40 md:max-h-48 overflow-y-auto">
+                                                {ep.description}
+                                            </div>
+                                            
+                                            {ep.audioUrl && (
+                                                <div className="bg-gray-800 p-3 md:p-4 rounded-xl md:rounded-2xl shadow-xl relative z-10 pointer-events-auto border-4 border-gray-700 w-full">
+                                                    <div className="flex justify-between items-center mb-2 pl-1">
+                                                        <span className="text-yellow-400 text-xs md:text-sm font-bold"><i className="fa-solid fa-headphones"></i> 線上收聽</span>
+                                                        <a href={ep.audioUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-gray-400 hover:text-white transition">另開視窗</a>
+                                                    </div>
+                                                    {/* 加入 key 強制 React 更新播放器實體 */}
+                                                    <audio key={ep.audioUrl} controls preload="metadata" className="w-full outline-none">
+                                                        <source src={ep.audioUrl} type="audio/mpeg" />
+                                                        您的瀏覽器不支援音訊播放。
+                                                    </audio>
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        {/* 下半部：專屬表單任務 */}
+                                        {formUrl && (
+                                            <div className="bg-emerald-50 border-t border-emerald-100 p-5 md:p-8 flex flex-col md:flex-row items-center justify-between gap-6 relative z-10">
+                                                
+                                                <div className="flex flex-col items-center md:items-start text-center md:text-left flex-1 w-full">
+                                                    <div className="pulse-text mb-3 bg-red-50 border border-red-200 text-red-600 font-black px-4 py-1.5 rounded-full flex items-center gap-2 text-xs self-center md:self-start shadow-sm">
+                                                        <i className="fa-solid fa-microphone-lines"></i> 上傳錄音，參加活動
+                                                    </div>
+                                                    
+                                                    <h4 className="text-xl md:text-2xl font-black text-emerald-800 mb-2">
+                                                        EP{formattedEpNum} 填報表單
+                                                    </h4>
+                                                    <p className="text-sm text-emerald-600 mb-4 font-bold">請點擊按鈕或掃描右側 QR Code 完成本集任務。</p>
+                                                    
+                                                    <a href={formUrl} target="_blank" rel="noopener noreferrer" className="w-full md:w-auto text-center bg-emerald-600 text-white font-black py-3 px-8 rounded-xl hover:bg-emerald-700 transition shadow-lg transform hover:scale-105 active:scale-95 text-base md:text-lg">
+                                                        <i className="fa-solid fa-pen-to-square mr-2"></i> 前往填寫表單
+                                                    </a>
+
+                                                    <div className="mt-4 w-full md:w-auto bg-white px-3 py-2 rounded-lg border border-emerald-100 text-left overflow-hidden shadow-inner">
+                                                        <p className="text-[10px] text-gray-400 font-bold mb-0.5 uppercase">表單短網址</p>
+                                                        <p className="text-xs md:text-sm text-emerald-700 font-bold truncate max-w-[250px] md:max-w-[300px] select-all cursor-pointer" title="點擊可選取複製">
+                                                            {formUrl}
+                                                        </p>
+                                                    </div>
+                                                </div>
+
+                                                <div className="shrink-0 p-3 bg-white rounded-2xl border-2 border-emerald-100 shadow-md transform rotate-1 hover:rotate-0 transition">
+                                                    <img 
+                                                        src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(formUrl)}&margin=2`} 
+                                                        alt="Form QR Code" 
+                                                        className="w-28 h-28 md:w-36 md:h-36 rounded-lg"
+                                                    />
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                );
+                            })
+                        )}
+                    </div>
+                    
+                    <footer className="text-center text-yellow-800/60 font-black mt-16 md:mt-20 pb-8 text-xs md:text-sm">
+                        &copy; 2024-{new Date().getFullYear()} 北成國小 SAY 哩賀！ 雙語團隊
+                    </footer>
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
