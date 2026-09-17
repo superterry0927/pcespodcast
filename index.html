@@ -60,12 +60,10 @@
     };
 
     let db = null;
-    let isFirebaseReady = false;
 
     try {
       if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
       db = firebase.database();
-      isFirebaseReady = true;
     } catch (e) {
       console.error("Firebase 初始化失敗", e);
     }
@@ -87,9 +85,20 @@
       const [errorMsg, setErrorMsg] = useState('');
 
       useEffect(() => {
-        if (!db) return;
+        if (!db) {
+          setErrorMsg('連線失敗：找不到 Firebase 資料庫模組。');
+          setLoading(false);
+          return;
+        }
+
+        const timeout = setTimeout(() => {
+          setLoading(false);
+          setErrorMsg('資料庫連線逾時！請確認 Firebase 控制台已點擊「建立 Realtime Database」。');
+        }, 5000);
+
         const settingsRef = db.ref('settings');
         settingsRef.on('value', (snapshot) => {
+          clearTimeout(timeout);
           const data = snapshot.val();
           if (data) {
             if (data.adminPassword) setAdminPassword(data.adminPassword);
@@ -99,9 +108,12 @@
           }
           setLoading(false);
         }, (error) => {
+          clearTimeout(timeout);
           setErrorMsg('無法讀取資料庫！請確認 Firebase 控制台已建立 Realtime Database 且規則已設為 true。');
           setLoading(false);
         });
+        
+        return () => clearTimeout(timeout);
       }, []);
 
       useEffect(() => {
@@ -119,7 +131,6 @@
             const episodes = data.items.map(item => {
               let cleanAudio = item.enclosure ? item.enclosure.link : "";
               
-              // 【終極網址清洗】尋找網址中最後一個 http 開頭的地方，徹底切斷前方所有追蹤碼
               const realHttpIndex = cleanAudio.lastIndexOf("http");
               if (realHttpIndex > 0) {
                 cleanAudio = cleanAudio.substring(realHttpIndex);
@@ -325,7 +336,7 @@
                             <a href={ep.audioUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-500 hover:text-blue-700 underline font-semibold"><i className="fas fa-external-link-alt mr-1"></i> 播放器沒反應？點此另開視窗收聽</a>
                         </div>
 
-                      {/* 綁定的表單任務區塊 */}
+                        {/* 綁定的表單任務區塊 */}
                         {boundForm && (
                           <div className="mt-4 border-t border-dashed border-gray-300 pt-6">
                             <div className="bg-green-50 rounded-2xl p-4 md:p-6 border border-green-100 flex flex-row items-center justify-between gap-4">
@@ -362,6 +373,17 @@
                             </div>
                           </div>
                         )}
+
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    }
 
     ReactDOM.render(<App />, document.getElementById('root'));
   </script>
