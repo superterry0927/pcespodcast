@@ -80,6 +80,9 @@
       const [customLogo, setCustomLogo] = useState('');
       const [formBindings, setFormBindings] = useState([]);
       
+      // 新增：收聽次數狀態
+      const [playCounts, setPlayCounts] = useState({});
+      
       const [podcastData, setPodcastData] = useState(null);
       const [loading, setLoading] = useState(true);
       const [errorMsg, setErrorMsg] = useState('');
@@ -96,6 +99,7 @@
           setErrorMsg('資料庫連線逾時！請確認 Firebase 控制台已點擊「建立 Realtime Database」。');
         }, 5000);
 
+        // 讀取設定資料
         const settingsRef = db.ref('settings');
         settingsRef.on('value', (snapshot) => {
           clearTimeout(timeout);
@@ -111,6 +115,15 @@
           clearTimeout(timeout);
           setErrorMsg('無法讀取資料庫！請確認 Firebase 控制台已建立 Realtime Database 且規則已設為 true。');
           setLoading(false);
+        });
+
+        // 新增：即時監聽收聽次數
+        const playCountsRef = db.ref('playCounts');
+        playCountsRef.on('value', (snapshot) => {
+          const counts = snapshot.val();
+          if (counts) {
+            setPlayCounts(counts);
+          }
         });
         
         return () => clearTimeout(timeout);
@@ -202,6 +215,21 @@
         const newBindings = formBindings.filter((_, i) => i !== index);
         setFormBindings(newBindings);
         handleSaveSettings({ formBindings: newBindings }, '已刪除該綁定！');
+      };
+
+      // 新增：處理點擊播放，增加計數 (每個網頁載入針對每集只計數一次，防狂點)
+      const handlePlayCount = (epTitle) => {
+        if (!db) return;
+        
+        // 使用 sessionStorage 避免同一個使用者在不重整頁面的情況下狂按播放刷次數
+        const hasPlayedSession = sessionStorage.getItem(`played_${epTitle}`);
+        if (!hasPlayedSession) {
+          const epRef = db.ref(`playCounts/${epTitle}`);
+          epRef.transaction((currentCount) => {
+            return (currentCount || 0) + 1;
+          });
+          sessionStorage.setItem(`played_${epTitle}`, 'true');
+        }
       };
 
       if (loading) return <div className="min-h-screen flex items-center justify-center font-bold text-xl text-gray-600">載入雲端資料中...</div>;
@@ -319,6 +347,9 @@
                 {podcastData && podcastData.episodes && podcastData.episodes.map((ep, index) => {
                   const epNumber = podcastData.episodes.length - index;
                   const boundForm = formBindings.find(b => b.episodeTitle === ep.title);
+                  
+                  // 取得目前的點擊次數
+                  const currentPlayCount = playCounts[ep.title] || 0;
 
                   return (
                     <div key={index} className="relative pt-6 animate-fade-in-up">
@@ -330,46 +361,38 @@
                         <p className="text-gray-600 text-sm md:text-base leading-relaxed mb-6 custom-scrollbar max-h-32 overflow-y-auto pr-2">{ep.description}</p>
                         
                         <div className="bg-gray-100 p-3 md:p-4 rounded-2xl shadow-inner mb-2">
-                          <audio controls src={ep.audioUrl} preload="metadata" className="w-full h-12 outline-none rounded-full">不支援音訊播放。</audio>
+                          <audio 
+                            controls 
+                            src={ep.audioUrl} 
+                            preload="metadata" 
+                            className="w-full h-12 outline-none rounded-full"
+                            onPlay={() => handlePlayCount(ep.title)}
+                          >不支援音訊播放。</audio>
                         </div>
-                        <div className="text-right mb-6">
+                        
+                        {/* 播放器下方資訊列 (包含收聽次數與備用連結) */}
+                        <div className="flex justify-between items-center mb-6 px-2">
+                            <div className="text-xs md:text-sm font-bold text-gray-500 bg-gray-100 px-3 py-1 rounded-full shadow-sm">
+                               <i className="fas fa-headphones-alt mr-1 text-blue-500"></i> 本站收聽：<span className="text-blue-600">{currentPlayCount}</span> 次
+                            </div>
                             <a href={ep.audioUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-500 hover:text-blue-700 underline font-semibold"><i className="fas fa-external-link-alt mr-1"></i> 播放器沒反應？點此另開視窗收聽</a>
                         </div>
 
-                        {/* 綁定的表單任務區塊 */}
                         {boundForm && (
                           <div className="mt-4 border-t border-dashed border-gray-300 pt-6">
                             <div className="bg-green-50 rounded-2xl p-4 md:p-6 border border-green-100 flex flex-row items-center justify-between gap-4">
-                              
-                              {/* 左側文字區 */}
                               <div className="flex flex-col items-start flex-1 space-y-3 md:space-y-4">
-                                <div className="bg-red-100 text-red-600 text-xs md:text-sm font-bold px-3 py-1.5 rounded-full pulsate-text shadow-sm whitespace-nowrap">
-                                  🎤 上傳錄音，參加活動
-                                </div>
-                                <div className="bg-green-500 text-white text-sm md:text-base font-bold px-4 py-2 rounded-full shadow-md whitespace-nowrap">
-                                  📝 EP{epNumber.toString().padStart(2, '0')} 填報表單
-                                </div>
+                                <div className="bg-red-100 text-red-600 text-xs md:text-sm font-bold px-3 py-1.5 rounded-full pulsate-text shadow-sm whitespace-nowrap">🎤 上傳錄音，參加活動</div>
+                                <div className="bg-green-500 text-white text-sm md:text-base font-bold px-4 py-2 rounded-full shadow-md whitespace-nowrap">📝 EP{epNumber.toString().padStart(2, '0')} 填報表單</div>
                               </div>
-                              
-                              {/* 右側 QR Code 與按鈕區 */}
                               <div className="flex flex-col items-center shrink-0 w-28 md:w-32">
                                 <div className="bg-white p-2 rounded-xl shadow-sm border border-gray-100 mb-2 w-full flex justify-center">
-                                  <img 
-                                    src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(boundForm.formUrl)}`} 
-                                    alt="QR Code" 
-                                    className="w-20 h-20 md:w-24 md:h-24 object-contain"
-                                  />
+                                  <img src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(boundForm.formUrl)}`} alt="QR Code" className="w-20 h-20 md:w-24 md:h-24 object-contain"/>
                                 </div>
-                                <a 
-                                  href={boundForm.formUrl} 
-                                  target="_blank" 
-                                  rel="noopener noreferrer" 
-                                  className="bg-green-500 hover:bg-green-600 text-white text-xs md:text-sm font-bold py-2 px-1 rounded-lg text-center shadow-md flex items-center justify-center w-full transition-all"
-                                >
+                                <a href={boundForm.formUrl} target="_blank" rel="noopener noreferrer" className="bg-green-500 hover:bg-green-600 text-white text-xs md:text-sm font-bold py-2 px-1 rounded-lg text-center shadow-md flex items-center justify-center w-full transition-all">
                                   填寫表單 <i className="fas fa-arrow-right ml-1"></i>
                                 </a>
                               </div>
-
                             </div>
                           </div>
                         )}
