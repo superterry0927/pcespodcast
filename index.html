@@ -86,6 +86,7 @@
       const [podcastData, setPodcastData] = useState(null);
       const [loading, setLoading] = useState(true);
       const [errorMsg, setErrorMsg] = useState('');
+      const [audioErrors, setAudioErrors] = useState({});
 
       useEffect(() => {
         if (!db) {
@@ -135,39 +136,54 @@
 
       const fetchRssData = async (url) => {
         try {
-          const response = await fetch(`https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(url)}&api_key=`);
+          const response = await fetch(`https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(url)}`);
+          if (!response.ok) throw new Error(`RSS 服務回應 HTTP ${response.status}`);
           const data = await response.json();
-          
-          if (data.status === 'ok') {
-            const htmlRegex = new RegExp('<[^>]+>', 'g'); 
-            
-            const episodes = data.items.map(item => {
-              let cleanAudio = item.enclosure ? item.enclosure.link : "";
-              
-              const realHttpIndex = cleanAudio.lastIndexOf("http");
-              if (realHttpIndex > 0) {
-                cleanAudio = cleanAudio.substring(realHttpIndex);
-              }
-
-              const cleanDescription = item.description.replace(htmlRegex, '');
-              return {
-                title: item.title,
-                pubDate: item.pubDate.split(' ')[0],
-                description: cleanDescription,
-                audioUrl: cleanAudio
-              };
-            });
-            
-            setPodcastData({
-              title: data.feed.title,
-              description: data.feed.description.replace(htmlRegex, ''),
-              image: customLogo || data.feed.image,
-              episodes: episodes
-            });
-            setErrorMsg('');
+          if (data.status !== 'ok' || !data.feed || !Array.isArray(data.items)) {
+            throw new Error(data.message || 'RSS 資料格式不正確');
           }
+
+          const htmlRegex = new RegExp('<[^>]+>', 'g');
+          const episodes = data.items.map(item => {
+            // 使用 RSS enclosure 原本的完整網址，不可用 lastIndexOf('http') 截斷。
+            const rawAudio = item.enclosure && (item.enclosure.link || item.enclosure.url);
+            const candidate = typeof rawAudio === 'string'
+              ? rawAudio.trim().replace(/&amp;/g, '&') : '';
+            const audioUrl = /^https?:\/\//i.test(candidate) ? candidate : '';
+
+            // 備援連結使用 RSS 的「單集頁面」，而不是可能回傳 404 的 MP3 網址。
+            let episodeUrl = '';
+            try {
+              const page = new URL(item.link || '');
+              if (page.protocol === 'https:' || page.protocol === 'http:') {
+                // Firstory 舊節目網站 .firstory.io 已停止服務。
+                if (page.hostname.endsWith('.firstory.io')) {
+                  page.hostname = page.hostname.replace(/\.firstory\.io$/, '.firstory.cc');
+                }
+                episodeUrl = page.toString();
+              }
+            } catch (e) { /* 無有效單集網址時不顯示備用連結 */ }
+
+            return {
+              title: item.title || '未命名單集',
+              pubDate: (item.pubDate || '').split(' ')[0],
+              description: (item.description || '').replace(htmlRegex, ''),
+              audioUrl,
+              episodeUrl
+            };
+          });
+
+          setPodcastData({
+            title: data.feed.title || 'SAY 哩賀！北成國小雙語PODCAST',
+            description: (data.feed.description || '').replace(htmlRegex, ''),
+            image: customLogo || data.feed.image || '',
+            episodes
+          });
+          setAudioErrors({});
+          setErrorMsg('');
         } catch (err) {
-          console.error(err);
+          console.error('Podcast RSS 讀取失敗：', err);
+          setErrorMsg('節目資料讀取失敗，請稍後重新整理；若持續發生請檢查 Firstory RSS 設定。');
         }
       };
 
@@ -282,7 +298,7 @@
               <div className="glass-card p-6">
                 <h2 className="text-xl font-bold text-gray-800 mb-4"><i className="fas fa-lock mr-2 text-orange-500"></i>管理後台密碼設定</h2>
                 <div className="flex flex-col md:flex-row gap-4">
-                  <input type="text" value={adminPassword} onChange={(e) => setAdminPassword(e.target.value)} placeholder="輸入新密碼" className="flex-1 px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-400" />
+                  <input type="password" value={adminPassword} onChange={(e) => setAdminPassword(e.target.value)} placeholder="輸入新密碼" className="flex-1 px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-400" />
                   <button onClick={() => handleSaveSettings({ adminPassword }, '新密碼已儲存！')} className="bg-orange-500 text-white px-6 py-2 rounded-lg font-bold hover:bg-orange-600">更新密碼</button>
                 </div>
               </div>
@@ -343,6 +359,9 @@
                 </div>
               )}
 
+              {podcastData && errorMsg && (
+                <p role="alert" className="mb-4 rounded-xl bg-red-50 p-3 text-sm font-semibold text-red-600">{errorMsg}</p>
+              )}
               <div className="space-y-8">
                 {podcastData && podcastData.episodes && podcastData.episodes.map((ep, index) => {
                   const epNumber = podcastData.episodes.length - index;
@@ -361,13 +380,25 @@
                         <p className="text-gray-600 text-sm md:text-base leading-relaxed mb-6 custom-scrollbar max-h-32 overflow-y-auto pr-2">{ep.description}</p>
                         
                         <div className="bg-gray-100 p-3 md:p-4 rounded-2xl shadow-inner mb-2">
-                          <audio 
-                            controls 
-                            src={ep.audioUrl} 
-                            preload="metadata" 
-                            className="w-full h-12 outline-none rounded-full"
-                            onPlay={() => handlePlayCount(ep.title)}
-                          >不支援音訊播放。</audio>
+                          {ep.audioUrl ? (
+                            <audio
+                              controls
+                              src={ep.audioUrl}
+                              preload="metadata"
+                              className="w-full h-12 outline-none rounded-full"
+                              onPlaying={() => handlePlayCount(ep.title)}
+                              onCanPlay={() => setAudioErrors(prev => prev[ep.title] ? { ...prev, [ep.title]: false } : prev)}
+                              onError={(event) => {
+                                console.error('音檔載入失敗：', ep.title, event.currentTarget.currentSrc);
+                                setAudioErrors(prev => ({ ...prev, [ep.title]: true }));
+                              }}
+                            >不支援音訊播放。</audio>
+                          ) : (
+                            <p className="text-sm font-semibold text-red-600">本集 RSS 沒有提供有效的音檔網址。</p>
+                          )}
+                          {(audioErrors[ep.title] || !ep.audioUrl) && (
+                            <p className="mt-2 text-sm text-red-600">音檔無法載入。請使用下方的單集頁面收聽，或檢查 Firstory 原始音檔。</p>
+                          )}
                         </div>
                         
                         {/* 播放器下方資訊列 (包含收聽次數與備用連結) */}
@@ -375,7 +406,9 @@
                             <div className="text-xs md:text-sm font-bold text-gray-500 bg-gray-100 px-3 py-1 rounded-full shadow-sm">
                                <i className="fas fa-headphones-alt mr-1 text-blue-500"></i> 本站收聽：<span className="text-blue-600">{currentPlayCount}</span> 次
                             </div>
-                            <a href={ep.audioUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-500 hover:text-blue-700 underline font-semibold"><i className="fas fa-external-link-alt mr-1"></i> 播放器沒反應？點此另開視窗收聽</a>
+                            {ep.episodeUrl && (
+                              <a href={ep.episodeUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-500 hover:text-blue-700 underline font-semibold"><i className="fas fa-external-link-alt mr-1"></i> 播放器沒反應？開啟單集頁面</a>
+                            )}
                         </div>
 
                         {boundForm && (
